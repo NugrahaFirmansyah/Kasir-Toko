@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -171,7 +172,7 @@ fun CustomerDebtScreen(
             onDismissRequest = { debtToSettle = null },
             title = { Text("Bayar / Lunasi Kasbon", fontWeight = FontWeight.Bold) },
             text = {
-                Column {
+                Column(modifier = Modifier.imePadding()) {
                     Text("Pelanggan: ${currentDebt.customerName}", fontWeight = FontWeight.SemiBold, color = Slate800)
                     Text("Total Bon: ${CurrencyFormatter.formatRupiah(currentDebt.totalDebt)}", fontSize = 12.sp, color = Slate500)
                     Text("Sisa Belum Dibayar: ${CurrencyFormatter.formatRupiah(remaining)}", fontWeight = FontWeight.Bold, color = KelontongAmber, fontSize = 14.sp)

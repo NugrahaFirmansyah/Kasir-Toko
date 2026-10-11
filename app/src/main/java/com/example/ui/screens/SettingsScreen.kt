@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -277,7 +278,7 @@ fun SettingsScreen(
             onDismissRequest = { isEditStoreOpen = false },
             title = { Text("Ubah Informasi Toko", fontWeight = FontWeight.Bold) },
             text = {
-                Column {
+                Column(modifier = Modifier.imePadding()) {
                     OutlinedTextField(
                         value = tempName,
                         onValueChange = { tempName = it },

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -509,7 +510,11 @@ fun RestockDialog(
             )
         },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+            ) {
                 Text(
                     text = product.name,
                     fontWeight = FontWeight.SemiBold,
@@ -605,7 +610,7 @@ fun AdjustStockDialog(
         onDismissRequest = onDismiss,
         title = { Text("Koreksi / Penyesuaian Stok", fontWeight = FontWeight.Bold) },
         text = {
-            Column {
+            Column(modifier = Modifier.imePadding()) {
                 Text(product.name, fontWeight = FontWeight.SemiBold, color = Slate800)
                 Text("Stok tercatat sistem: ${product.currentStock} ${product.unit}", fontSize = 12.sp, color = Slate500)
 
@@ -679,6 +684,7 @@ fun ProductFormDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
             ) {
                 OutlinedTextField(
