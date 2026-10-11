@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
@@ -57,8 +60,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -66,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.Product
 import com.example.ui.components.StockBadge
+import com.example.ui.util.ProductImageHelper
 import com.example.ui.theme.KelontongAmberContainer
 import com.example.ui.theme.KelontongGreenContainer
 import com.example.ui.theme.KelontongGreenDark
@@ -314,8 +321,8 @@ fun StockInventoryScreen(
             ProductFormDialog(
                 initialProduct = editingProduct,
                 onDismiss = { viewModel.closeProductFormDialog() },
-                onSave = { id, name, barcode, cat, unit, cost, sell, stock, minAlert ->
-                    viewModel.saveProduct(id, name, barcode, cat, unit, cost, sell, stock, minAlert)
+                onSave = { id, name, barcode, cat, unit, cost, sell, stock, minAlert, img ->
+                    viewModel.saveProduct(id, name, barcode, cat, unit, cost, sell, stock, minAlert, img)
                 }
             )
         }
@@ -365,10 +372,38 @@ fun ProductInventoryItemCard(
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
-                verticalAlignment = Alignment.Top,
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Product Photo Thumbnail
+                val photoRes = ProductImageHelper.getDrawableForProduct(product)
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Slate100),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (photoRes != null) {
+                        Image(
+                            painter = painterResource(id = photoRes),
+                            contentDescription = product.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = Slate500,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
@@ -656,7 +691,7 @@ fun AdjustStockDialog(
 fun ProductFormDialog(
     initialProduct: Product?,
     onDismiss: () -> Unit,
-    onSave: (Long, String, String, String, String, Long, Long, Int, Int) -> Unit
+    onSave: (Long, String, String, String, String, Long, Long, Int, Int, String) -> Unit
 ) {
     val isEdit = initialProduct != null
 
@@ -668,6 +703,7 @@ fun ProductFormDialog(
     var sellingPriceText by remember { mutableStateOf(initialProduct?.sellingPrice?.toString() ?: "") }
     var stockText by remember { mutableStateOf(initialProduct?.currentStock?.toString() ?: "10") }
     var minAlertText by remember { mutableStateOf(initialProduct?.minStockAlert?.toString() ?: "5") }
+    var selectedImagePreset by remember { mutableStateOf(initialProduct?.imageResName ?: "") }
 
     val categories = listOf("Sembako", "Makanan", "Minuman", "Bumbu", "Perlengkapan", "Lainnya")
     val units = listOf("Pcs", "Kg", "Bungkus", "Botol", "Liter", "Pouch", "Dus", "Renceng", "Sak", "Kaleng", "Tabung")
@@ -687,6 +723,64 @@ fun ProductFormDialog(
                     .imePadding()
                     .verticalScroll(rememberScrollState())
             ) {
+                // Photo selection preview
+                Text("Foto Produk:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (selectedImagePreset.isBlank()) KelontongGreenDark else Slate100,
+                            modifier = Modifier.clickable { selectedImagePreset = "" }
+                        ) {
+                            Text(
+                                text = "Otomatis",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selectedImagePreset.isBlank()) Color.White else Slate700,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                    items(ProductImageHelper.availableImagePresets) { (label, presetResName) ->
+                        val isSelected = selectedImagePreset == presetResName
+                        val resId = ProductImageHelper.getDrawableByPresetName(presetResName)
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSelected) KelontongGreenContainer else Slate100,
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, KelontongGreenDark) else null,
+                            modifier = Modifier.clickable { selectedImagePreset = presetResName }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                if (resId != null) {
+                                    Image(
+                                        painter = painterResource(id = resId),
+                                        contentDescription = label,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(22.dp).clip(RoundedCornerShape(4.dp))
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                }
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) KelontongGreenDark else Slate700
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -849,7 +943,8 @@ fun ProductFormDialog(
                         cost,
                         sell,
                         stock,
-                        minAlert
+                        minAlert,
+                        selectedImagePreset
                     )
                 },
                 enabled = name.isNotBlank() && sell > 0,

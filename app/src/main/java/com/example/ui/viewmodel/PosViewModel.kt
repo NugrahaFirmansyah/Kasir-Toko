@@ -444,7 +444,8 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         costPrice: Long,
         sellingPrice: Long,
         stock: Int,
-        minAlert: Int
+        minAlert: Int,
+        imageResName: String = ""
     ) {
         if (name.isBlank()) {
             _userMessage.value = "Nama barang tidak boleh kosong"
@@ -463,6 +464,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     sellingPrice = sellingPrice,
                     currentStock = stock,
                     minStockAlert = minAlert,
+                    imageResName = imageResName.trim(),
                     updatedAt = System.currentTimeMillis()
                 )
 

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -62,8 +64,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,6 +80,7 @@ import com.example.data.model.PaymentMethod
 import com.example.data.model.Product
 import com.example.ui.components.QuantityStepper
 import com.example.ui.components.StockBadge
+import com.example.ui.util.ProductImageHelper
 import com.example.ui.theme.KelontongAmber
 import com.example.ui.theme.KelontongAmberContainer
 import com.example.ui.theme.KelontongGreenContainer
@@ -403,6 +408,35 @@ fun ProductCashierCard(
             .testTag("product_card_${product.id}")
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            // Product Photo
+            val photoRes = ProductImageHelper.getDrawableForProduct(product)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Slate100),
+                contentAlignment = Alignment.Center
+            ) {
+                if (photoRes != null) {
+                    Image(
+                        painter = painterResource(id = photoRes),
+                        contentDescription = product.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Inventory2,
+                        contentDescription = null,
+                        tint = Slate500,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Category & Barcode
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -566,6 +600,33 @@ fun CartSheetContent(
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
             ) {
+                val photoRes = ProductImageHelper.getDrawableForProduct(cartItem.product)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Slate100),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (photoRes != null) {
+                        Image(
+                            painter = painterResource(id = photoRes),
+                            contentDescription = cartItem.product.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = Slate500,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = cartItem.product.name,
