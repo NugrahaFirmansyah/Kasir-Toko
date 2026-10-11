@@ -1,0 +1,8 @@
+{
+  "name": "Kasir Toko Kelontong",
+  "description": "Aplikasi kasir pintar untuk toko kelontong dengan pencatatan dan pengurangan stok otomatis, manajemen inventaris, kasbon, dan laporan laba rugi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
