@@ -44,6 +44,16 @@ object CurrencyFormatter {
         return sdf.format(Date(timestamp))
     }
 
+    fun formatMonthYear(timestamp: Long): String {
+        val sdf = SimpleDateFormat("MMMM yyyy", Locale("id", "ID"))
+        return sdf.format(Date(timestamp))
+    }
+
+    fun formatYearMonthKey(timestamp: Long): String {
+        val sdf = SimpleDateFormat("yyyy-MM", Locale.getDefault())
+        return sdf.format(Date(timestamp))
+    }
+
     fun generateInvoiceNumber(): String {
         val datePart = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.getDefault()).format(Date())
         val randomSuffix = (100..999).random()

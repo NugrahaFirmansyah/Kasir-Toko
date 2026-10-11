@@ -309,6 +309,55 @@ fun TransactionsScreen(
                             )
                         }
                     }
+
+                    if (currentTrx.paymentMethod == PaymentMethod.QRIS || currentTrx.paymentMethod == PaymentMethod.TRANSFER) {
+                        Surface(
+                            color = StockSafeContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = StockSafeGreen,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Bukti Pembayaran Terverifikasi Sesuai",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StockSafeGreen
+                                    )
+                                }
+                                Row(
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                ) {
+                                    Text("Nominal Bukti:", fontSize = 11.sp, color = Slate700)
+                                    Text(
+                                        CurrencyFormatter.formatRupiah(currentTrx.paymentProofNominal),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StockSafeGreen
+                                    )
+                                }
+                                if (currentTrx.paymentProofRef.isNotBlank()) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                                    ) {
+                                        Text("No. Referensi:", fontSize = 11.sp, color = Slate700)
+                                        Text(currentTrx.paymentProofRef, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {

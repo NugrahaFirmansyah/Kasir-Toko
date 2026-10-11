@@ -39,6 +39,9 @@ data class TransactionRecord(
     val note: String = "",
     val totalCostAmount: Long = 0, // Total HPP untuk kalkulasi laba bersih
     val status: TransactionStatus = TransactionStatus.SELESAI,
+    val paymentProofNominal: Long = 0, // Nominal yang tertera pada bukti pembayaran/transfer
+    val paymentProofRef: String = "", // Nomor referensi bukti transfer / RRN QRIS
+    val isPaymentProofValid: Boolean = true, // Status verifikasi kecocokan bukti
     val timestamp: Long = System.currentTimeMillis()
 )
 

@@ -22,6 +22,7 @@ class PosRepository(private val database: AppDatabase) {
     val lowStockCount: Flow<Int> = productDao.getLowStockCount()
     val allStockMutations: Flow<List<StockMutation>> = productDao.getAllStockMutations()
     val allTransactions: Flow<List<TransactionRecord>> = transactionDao.getAllTransactions()
+    val allTransactionItems: Flow<List<TransactionItem>> = transactionDao.getAllTransactionItems()
     val allDebts: Flow<List<CustomerDebt>> = transactionDao.getAllDebts()
     val unsettledDebts: Flow<List<CustomerDebt>> = transactionDao.getUnsettledDebts()
     val unsettledDebtCount: Flow<Int> = transactionDao.getUnsettledDebtCount()

@@ -38,6 +38,9 @@ interface TransactionDao {
     @Query("SELECT * FROM transaction_items WHERE transactionId = :transactionId")
     fun getItemsForTransaction(transactionId: Long): Flow<List<TransactionItem>>
 
+    @Query("SELECT * FROM transaction_items")
+    fun getAllTransactionItems(): Flow<List<TransactionItem>>
+
     @Query("SELECT * FROM transaction_items WHERE transactionId = :transactionId")
     suspend fun getItemsForTransactionSync(transactionId: Long): List<TransactionItem>
 

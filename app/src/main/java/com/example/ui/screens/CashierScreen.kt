@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
@@ -93,6 +94,8 @@ import com.example.ui.theme.Slate500
 import com.example.ui.theme.Slate700
 import com.example.ui.theme.Slate800
 import com.example.ui.theme.StockRed
+import com.example.ui.theme.StockRedContainer
+import com.example.ui.theme.StockSafeContainer
 import com.example.ui.theme.StockSafeGreen
 import com.example.ui.theme.StockWarningContainer
 import com.example.ui.theme.StockWarningOrange
@@ -364,8 +367,8 @@ fun CashierScreen(
             CheckoutDialog(
                 finalAmount = cartFinalAmount,
                 onDismiss = { viewModel.closeCheckoutDialog() },
-                onConfirm = { method, paid, custName, note ->
-                    viewModel.processCheckout(method, paid, custName, note)
+                onConfirm = { method, paid, custName, note, proofNominal, proofRef ->
+                    viewModel.processCheckout(method, paid, custName, note, proofNominal, proofRef)
                 }
             )
         }
@@ -745,17 +748,78 @@ fun CartSheetContent(
 fun CheckoutDialog(
     finalAmount: Long,
     onDismiss: () -> Unit,
-    onConfirm: (PaymentMethod, Long, String, String) -> Unit
+    onConfirm: (PaymentMethod, Long, String, String, Long, String) -> Unit
 ) {
     var selectedMethod by remember { mutableStateOf(PaymentMethod.TUNAI) }
     var paidAmountText by remember { mutableStateOf("") }
+    var proofNominalText by remember { mutableStateOf("") }
+    var proofRef by remember { mutableStateOf("") }
     var customerName by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var showSampleProofPreview by remember { mutableStateOf(false) }
+    var paymentFailureReason by remember { mutableStateOf<String?>(null) }
 
     val paidAmount = paidAmountText.toLongOrNull() ?: 0L
+    val proofNominal = proofNominalText.toLongOrNull() ?: 0L
     val changeAmount = (paidAmount - finalAmount).coerceAtLeast(0L)
-    val isCashValid = selectedMethod != PaymentMethod.TUNAI || paidAmount >= finalAmount
-    val isKasbonValid = selectedMethod != PaymentMethod.KASBON || customerName.isNotBlank()
+    val isDigital = selectedMethod == PaymentMethod.QRIS || selectedMethod == PaymentMethod.TRANSFER
+    val isProofMatching = proofNominal == finalAmount
+
+    // Dialog Peringatan Pembayaran Gagal
+    if (paymentFailureReason != null) {
+        AlertDialog(
+            onDismissRequest = { paymentFailureReason = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Cancel,
+                    contentDescription = null,
+                    tint = StockRed,
+                    modifier = Modifier.size(40.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Pembayaran GAGAL!",
+                    fontWeight = FontWeight.Bold,
+                    color = StockRed,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = paymentFailureReason ?: "",
+                        fontSize = 13.sp,
+                        color = Slate800,
+                        lineHeight = 19.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        color = StockRedContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "⚠ Transaksi tidak selesai & stok barang TIDAK dipotong.",
+                            color = StockRed,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { paymentFailureReason = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = StockRed),
+                    modifier = Modifier.testTag("btn_dismiss_payment_fail")
+                ) {
+                    Text("Perbaiki Nominal Bukti")
+                }
+            }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -908,6 +972,278 @@ fun CheckoutDialog(
                     }
                 }
 
+                // Digital Payment Proof Verification (QRIS & Transfer)
+                if (isDigital) {
+                    Surface(
+                        color = Slate100,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = KelontongGreenDark,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Verifikasi Bukti Pembayaran",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = KelontongGreenDark
+                                )
+                            }
+
+                            Text(
+                                text = "Masukkan nominal yang tertera pada bukti transfer / QRIS pelanggan. Pembayaran HANYA berhasil jika nominal cocok persis dengan total tagihan.",
+                                fontSize = 11.sp,
+                                color = Slate700,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                            )
+
+                            // Input Nominal Bukti
+                            OutlinedTextField(
+                                value = proofNominalText,
+                                onValueChange = { proofNominalText = it },
+                                label = { Text("Nominal Bukti Pembayaran (Rp) *") },
+                                placeholder = { Text("Contoh: ${finalAmount}") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("input_proof_nominal")
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Input Nomor Referensi / RRN Bukti
+                            OutlinedTextField(
+                                value = proofRef,
+                                onValueChange = { proofRef = it },
+                                label = { Text("No. Referensi / RRN Bukti (Opsional)") },
+                                placeholder = { Text("Contoh: TRX-928371") },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("input_proof_ref")
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Shortcut simulation buttons for testing
+                            Text(
+                                text = "Uji Kesesuaian Bukti:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Slate700
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                // Sesuai (Valid)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = StockSafeContainer,
+                                    modifier = Modifier
+                                        .weight(1.3f)
+                                        .clickable {
+                                            proofNominalText = finalAmount.toString()
+                                            if (proofRef.isBlank()) {
+                                                proofRef = "REF-OK-${System.currentTimeMillis() % 10000}"
+                                            }
+                                        }
+                                        .testTag("btn_proof_match")
+                                ) {
+                                    Text(
+                                        text = " Sesuai Tagihan",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StockSafeGreen,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp)
+                                    )
+                                }
+
+                                // Simulasi Kurang (Gagal)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = StockRedContainer,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            val kurang = (finalAmount - 10000L).coerceAtLeast(1000L)
+                                            proofNominalText = kurang.toString()
+                                            proofRef = "REF-KURANG"
+                                        }
+                                        .testTag("btn_proof_under")
+                                ) {
+                                    Text(
+                                        text = "Kurang (-10rb)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = StockRed,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp)
+                                    )
+                                }
+
+                                // Simulasi Lebih (Gagal)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = StockRedContainer,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            val lebih = finalAmount + 10000L
+                                            proofNominalText = lebih.toString()
+                                            proofRef = "REF-LEBIH"
+                                        }
+                                        .testTag("btn_proof_over")
+                                ) {
+                                    Text(
+                                        text = "Lebih (+10rb)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = StockRed,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Live Comparison Badge
+                            if (proofNominalText.isBlank()) {
+                                Surface(
+                                    color = Slate200,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "ℹ Silakan masukkan nominal bukti pembayaran pelanggan.",
+                                        fontSize = 11.sp,
+                                        color = Slate700,
+                                        modifier = Modifier.padding(8.dp)
+                                    )
+                                }
+                            } else if (isProofMatching) {
+                                Surface(
+                                    color = StockSafeContainer,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = StockSafeGreen,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = " BUKTI PEMBAYARAN SESUAI (VALID)",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = StockSafeGreen
+                                            )
+                                            Text(
+                                                text = "Nominal bukti Rp ${CurrencyFormatter.formatRupiah(proofNominal)} COCOK 100% dengan total tagihan. Pembayaran lanjut dan selesai!",
+                                                fontSize = 11.sp,
+                                                color = Slate700
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                val selisih = kotlin.math.abs(proofNominal - finalAmount)
+                                val statusKet = if (proofNominal < finalAmount) "Kurang" else "Lebih"
+                                Surface(
+                                    color = StockRedContainer,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Cancel,
+                                            contentDescription = null,
+                                            tint = StockRed,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = "❌ BUKTI PEMBAYARAN TIDAK SESUAI (GAGAL)",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = StockRed
+                                            )
+                                            Text(
+                                                text = "Nominal bukti Rp ${CurrencyFormatter.formatRupiah(proofNominal)} $statusKet ${CurrencyFormatter.formatRupiah(selisih)} dari tagihan Rp ${CurrencyFormatter.formatRupiah(finalAmount)}. Pembayaran akan GAGAL!",
+                                                fontSize = 11.sp,
+                                                color = StockRed
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Toggle Sample Proof Preview
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showSampleProofPreview = !showSampleProofPreview }
+                            ) {
+                                Text(
+                                    text = if (showSampleProofPreview) "Sembunyikan Contoh Struk Bukti" else "Lihat Contoh Struk Bukti Transfer",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = KelontongGreenDark
+                                )
+                                Text(
+                                    text = if (showSampleProofPreview) "▲" else "▼",
+                                    fontSize = 11.sp,
+                                    color = KelontongGreenDark
+                                )
+                            }
+
+                            if (showSampleProofPreview) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(180.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.White),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = ProductImageHelper.sampleProofDrawable),
+                                        contentDescription = "Contoh Bukti Transfer",
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Kasbon specific input
                 if (selectedMethod == PaymentMethod.KASBON) {
                     Surface(
@@ -954,18 +1290,40 @@ fun CheckoutDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    // Cek kesesuaian bukti pembayaran digital
+                    if (isDigital) {
+                        if (proofNominal != finalAmount) {
+                            val selisih = kotlin.math.abs(proofNominal - finalAmount)
+                            val statusKet = if (proofNominal < finalAmount) "Kurang" else "Lebih"
+                            paymentFailureReason = "Nominal bukti transfer (${CurrencyFormatter.formatRupiah(proofNominal)}) TIDAK SESUAI total tagihan (${CurrencyFormatter.formatRupiah(finalAmount)}).\n\nStatus: PEMBAYARAN GAGAL!\nSelisih $statusKet: ${CurrencyFormatter.formatRupiah(selisih)}\n\nTransaksi tidak dapat diselesaikan dan stok barang TIDAK dipotong. Silakan periksa kembali bukti pembayaran pelanggan."
+                            return@Button
+                        }
+                    } else if (selectedMethod == PaymentMethod.TUNAI) {
+                        if (paidAmount < finalAmount) {
+                            val kurang = finalAmount - paidAmount
+                            paymentFailureReason = "Uang tunai yang diterima (${CurrencyFormatter.formatRupiah(paidAmount)}) KURANG dari total tagihan (${CurrencyFormatter.formatRupiah(finalAmount)}).\n\nKurang: ${CurrencyFormatter.formatRupiah(kurang)}\n\nPembayaran GAGAL."
+                            return@Button
+                        }
+                    } else if (selectedMethod == PaymentMethod.KASBON) {
+                        if (customerName.isBlank()) {
+                            paymentFailureReason = "Nama pelanggan wajib diisi untuk pencatatan buku kasbon."
+                            return@Button
+                        }
+                    }
+
+                    // Jika sesuai, pembayaran lanjut dan selesai
                     val finalPaid = when (selectedMethod) {
                         PaymentMethod.TUNAI -> paidAmount
                         PaymentMethod.KASBON -> 0L
-                        else -> finalAmount
+                        PaymentMethod.QRIS, PaymentMethod.TRANSFER -> proofNominal
                     }
-                    onConfirm(selectedMethod, finalPaid, customerName, note)
+                    val actualProofRef = if (isDigital) proofRef.ifBlank { "TRX-${System.currentTimeMillis() % 100000}" } else "TUNAI"
+                    onConfirm(selectedMethod, finalPaid, customerName, note, proofNominal, actualProofRef)
                 },
-                enabled = isCashValid && isKasbonValid,
                 colors = ButtonDefaults.buttonColors(containerColor = KelontongGreenDark),
                 modifier = Modifier.testTag("btn_confirm_checkout")
             ) {
-                Text("Proses & Potong Stok")
+                Text("Proses & Selesaikan")
             }
         },
         dismissButton = {
@@ -1031,6 +1389,56 @@ fun ReceiptDialog(
                             fontWeight = FontWeight.SemiBold,
                             color = KelontongGreenDark
                         )
+                    }
+                }
+
+                // Digital Payment Verified Banner
+                if (trx.paymentMethod == PaymentMethod.QRIS || trx.paymentMethod == PaymentMethod.TRANSFER) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        color = StockSafeContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = StockSafeGreen,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Bukti Pembayaran Terverifikasi Sesuai",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = StockSafeGreen
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Nominal Bukti:", fontSize = 11.sp, color = Slate700)
+                                Text(
+                                    CurrencyFormatter.formatRupiah(trx.paymentProofNominal),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StockSafeGreen
+                                )
+                            }
+                            if (trx.paymentProofRef.isNotBlank()) {
+                                Row(
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                                ) {
+                                    Text("No. Referensi:", fontSize = 11.sp, color = Slate700)
+                                    Text(trx.paymentProofRef, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
                     }
                 }
 

@@ -12,6 +12,8 @@ import com.example.data.model.Product
 import com.example.data.model.StockMutation
 import com.example.data.model.TransactionItem
 import com.example.data.model.TransactionRecord
+import com.example.data.model.MonthlyItemSoldSummary
+import com.example.data.model.MonthlyProfitLossReport
 import com.example.data.model.TransactionStatus
 import com.example.data.repository.PosRepository
 import com.example.ui.util.CurrencyFormatter
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -82,6 +85,64 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     val allTransactions: StateFlow<List<TransactionRecord>> = repository.allTransactions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allTransactionItems: StateFlow<List<TransactionItem>> = repository.allTransactionItems
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Filter Periode Bulan untuk Laporan Laba Rugi
+    private val _selectedReportMonth = MutableStateFlow(
+        CurrencyFormatter.formatYearMonthKey(System.currentTimeMillis())
+    )
+    val selectedReportMonth: StateFlow<String> = _selectedReportMonth.asStateFlow()
+
+    fun selectReportMonth(yearMonthKey: String) {
+        _selectedReportMonth.value = yearMonthKey
+    }
+
+    // Daftar bulan yang tersedia dalam database transaksi
+    val availableReportMonths: StateFlow<List<Pair<String, String>>> = allTransactions.map { trxs ->
+        val currentKey = CurrencyFormatter.formatYearMonthKey(System.currentTimeMillis())
+        val keys = trxs.map { CurrencyFormatter.formatYearMonthKey(it.timestamp) }
+            .plus(currentKey)
+            .distinct()
+            .sortedDescending()
+
+        keys.map { key ->
+            val sampleTimestamp = trxs.firstOrNull { CurrencyFormatter.formatYearMonthKey(it.timestamp) == key }?.timestamp
+                ?: System.currentTimeMillis()
+            key to CurrencyFormatter.formatMonthYear(sampleTimestamp)
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        listOf(
+            CurrencyFormatter.formatYearMonthKey(System.currentTimeMillis()) to CurrencyFormatter.formatMonthYear(System.currentTimeMillis())
+        )
+    )
+
+    // Laporan Laba Rugi Bulanan Terpilih (Total Penjualan - Modal Barang Terjual)
+    val monthlyProfitLossReport: StateFlow<MonthlyProfitLossReport> = combine(
+        allTransactions,
+        allTransactionItems,
+        _selectedReportMonth
+    ) { trxs, items, selectedMonthKey ->
+        calculateMonthlyReport(trxs, items, selectedMonthKey)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        calculateMonthlyReport(emptyList(), emptyList(), CurrencyFormatter.formatYearMonthKey(System.currentTimeMillis()))
+    )
+
+    // Rekapitulasi Riwayat Laba Rugi Setiap Bulan
+    val allMonthlyReports: StateFlow<List<MonthlyProfitLossReport>> = combine(
+        allTransactions,
+        allTransactionItems,
+        availableReportMonths
+    ) { trxs, items, months ->
+        months.map { (key, _) ->
+            calculateMonthlyReport(trxs, items, key)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allDebts: StateFlow<List<CustomerDebt>> = repository.allDebts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -294,23 +355,55 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * PROSES CHECKOUT KASIR:
-     * Menyimpan transaksi dan SECARA OTOMATIS MEMOTONG STOK & MENCATAT MUTASI
+     * Validasi bukti pembayaran sesuai jumlah nominal total tagihan.
+     * Jika tidak sesuai -> Pembayaran Gagal.
+     * Jika sesuai -> Pembayaran lanjut, selesai & stok otomatis dipotong.
      */
     fun processCheckout(
         paymentMethod: PaymentMethod,
         paidAmount: Long,
         customerName: String,
-        note: String
-    ) {
+        note: String,
+        paymentProofNominal: Long = 0L,
+        paymentProofRef: String = ""
+    ): Boolean {
         val itemsInCart = _cart.value.values.toList()
-        if (itemsInCart.isEmpty()) return
+        if (itemsInCart.isEmpty()) {
+            _userMessage.value = "Keranjang belanja masih kosong"
+            return false
+        }
 
         val subtotal = itemsInCart.sumOf { it.subtotal }
         val discount = _discountAmount.value
         val finalAmount = (subtotal - discount).coerceAtLeast(0L)
         val totalCost = itemsInCart.sumOf { it.totalCost }
 
-        val actualPaid = if (paymentMethod == PaymentMethod.KASBON) 0L else paidAmount
+        // VALIDASI KESESUAIAN BUKTI PEMBAYARAN
+        if (paymentMethod == PaymentMethod.QRIS || paymentMethod == PaymentMethod.TRANSFER) {
+            if (paymentProofNominal != finalAmount) {
+                val selisih = kotlin.math.abs(paymentProofNominal - finalAmount)
+                val statusKet = if (paymentProofNominal < finalAmount) "Kurang" else "Lebih"
+                _userMessage.value = "Pembayaran GAGAL: Nominal bukti transfer (${CurrencyFormatter.formatRupiah(paymentProofNominal)}) TIDAK SESUAI total tagihan (${CurrencyFormatter.formatRupiah(finalAmount)}). $statusKet ${CurrencyFormatter.formatRupiah(selisih)}!"
+                return false
+            }
+        } else if (paymentMethod == PaymentMethod.TUNAI) {
+            if (paidAmount < finalAmount) {
+                val kurang = finalAmount - paidAmount
+                _userMessage.value = "Pembayaran GAGAL: Uang tunai kurang ${CurrencyFormatter.formatRupiah(kurang)} dari total tagihan."
+                return false
+            }
+        } else if (paymentMethod == PaymentMethod.KASBON) {
+            if (customerName.isBlank()) {
+                _userMessage.value = "Pembayaran GAGAL: Nama pelanggan wajib diisi untuk catatan kasbon."
+                return false
+            }
+        }
+
+        val actualPaid = when (paymentMethod) {
+            PaymentMethod.KASBON -> 0L
+            PaymentMethod.QRIS, PaymentMethod.TRANSFER -> paymentProofNominal
+            PaymentMethod.TUNAI -> paidAmount
+        }
         val change = (actualPaid - finalAmount).coerceAtLeast(0L)
         val invoice = CurrencyFormatter.generateInvoiceNumber()
 
@@ -327,6 +420,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             note = note.trim(),
             totalCostAmount = totalCost,
             status = TransactionStatus.SELESAI,
+            paymentProofNominal = if (paymentMethod == PaymentMethod.QRIS || paymentMethod == PaymentMethod.TRANSFER) paymentProofNominal else 0L,
+            paymentProofRef = paymentProofRef.trim(),
+            isPaymentProofValid = true,
             timestamp = System.currentTimeMillis()
         )
 
@@ -362,11 +458,12 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 // Bersihkan keranjang
                 clearCart()
                 _isCheckoutDialogVisible.value = false
-                _userMessage.value = "Transaksi berhasil! Stok barang otomatis dikurangi."
+                _userMessage.value = "Pembayaran SUKSES! Bukti pembayaran sesuai tagihan & stok otomatis dipotong."
             } catch (e: Exception) {
                 _userMessage.value = "Gagal memproses transaksi: ${e.localizedMessage}"
             }
         }
+        return true
     }
 
     // Restock Dialog & Action
@@ -596,6 +693,12 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         if (trx.paymentMethod != PaymentMethod.KASBON) {
             sb.append("Bayar     : ${CurrencyFormatter.formatRupiah(trx.paidAmount)}\n")
             sb.append("Kembalian : ${CurrencyFormatter.formatRupiah(trx.changeAmount)}\n")
+            if (trx.paymentMethod == PaymentMethod.QRIS || trx.paymentMethod == PaymentMethod.TRANSFER) {
+                sb.append("Bukti     : TERVERIFIKASI SESUAI (100%)\n")
+                if (trx.paymentProofRef.isNotBlank()) {
+                    sb.append("No. Ref   : ${trx.paymentProofRef}\n")
+                }
+            }
         } else {
             sb.append("Status    : KASBON / BON TOKO\n")
         }
@@ -608,6 +711,128 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             type = "text/plain"
         }
         val shareIntent = Intent.createChooser(sendIntent, "Bagikan Struk Toko")
+        context.startActivity(shareIntent)
+    }
+
+    private fun calculateMonthlyReport(
+        allTrx: List<TransactionRecord>,
+        allItems: List<TransactionItem>,
+        targetYearMonthKey: String
+    ): MonthlyProfitLossReport {
+        val monthTrx = allTrx.filter {
+            it.status == TransactionStatus.SELESAI &&
+                    CurrencyFormatter.formatYearMonthKey(it.timestamp) == targetYearMonthKey
+        }
+
+        val totalRevenue = monthTrx.sumOf { it.finalAmount }
+        val totalCost = monthTrx.sumOf { it.totalCostAmount }
+        val totalDiscount = monthTrx.sumOf { it.discountAmount }
+        val netProfit = totalRevenue - totalCost
+        val isProfit = netProfit >= 0
+        val marginPercent = if (totalRevenue > 0) (netProfit.toDouble() * 100.0 / totalRevenue.toDouble()) else 0.0
+        val trxCount = monthTrx.size
+        val avgBasket = if (trxCount > 0) totalRevenue / trxCount else 0L
+
+        val cashRev = monthTrx.filter { it.paymentMethod == PaymentMethod.TUNAI }.sumOf { it.finalAmount }
+        val qrisRev = monthTrx.filter { it.paymentMethod == PaymentMethod.QRIS }.sumOf { it.finalAmount }
+        val transferRev = monthTrx.filter { it.paymentMethod == PaymentMethod.TRANSFER }.sumOf { it.finalAmount }
+        val kasbonRev = monthTrx.filter { it.paymentMethod == PaymentMethod.KASBON }.sumOf { it.finalAmount }
+
+        val trxIds = monthTrx.map { it.id }.toSet()
+        val relevantItems = allItems.filter { it.transactionId in trxIds }
+        val itemBreakdown = relevantItems
+            .groupBy { it.productId }
+            .map { (prodId, itemList) ->
+                val sample = itemList.first()
+                val qtySold = itemList.sumOf { it.quantity }
+                val itemRev = itemList.sumOf { it.subtotal }
+                val itemCost = itemList.sumOf { it.costPrice * it.quantity }
+                MonthlyItemSoldSummary(
+                    productId = prodId,
+                    productName = sample.productName,
+                    unit = sample.unit,
+                    totalQuantitySold = qtySold,
+                    totalRevenue = itemRev,
+                    totalCost = itemCost,
+                    profit = itemRev - itemCost
+                )
+            }
+            .sortedByDescending { it.totalRevenue }
+
+        val displayMonth = if (monthTrx.isNotEmpty()) {
+            CurrencyFormatter.formatMonthYear(monthTrx.first().timestamp)
+        } else {
+            try {
+                val parts = targetYearMonthKey.split("-")
+                val year = parts.getOrNull(0)?.toIntOrNull() ?: 2026
+                val month = (parts.getOrNull(1)?.toIntOrNull() ?: 10) - 1
+                val cal = java.util.Calendar.getInstance()
+                cal.set(java.util.Calendar.YEAR, year)
+                cal.set(java.util.Calendar.MONTH, month)
+                CurrencyFormatter.formatMonthYear(cal.timeInMillis)
+            } catch (e: Exception) {
+                targetYearMonthKey
+            }
+        }
+
+        return MonthlyProfitLossReport(
+            yearMonthKey = targetYearMonthKey,
+            displayMonthYear = displayMonth,
+            totalRevenue = totalRevenue,
+            totalCostOfGoodsSold = totalCost,
+            totalDiscount = totalDiscount,
+            netProfit = netProfit,
+            profitMarginPercent = marginPercent,
+            isProfit = isProfit,
+            transactionCount = trxCount,
+            averageTransactionValue = avgBasket,
+            cashRevenue = cashRev,
+            qrisRevenue = qrisRev,
+            transferRevenue = transferRev,
+            kasbonRevenue = kasbonRev,
+            transactions = monthTrx,
+            itemSoldBreakdown = itemBreakdown
+        )
+    }
+
+    fun shareMonthlyReport(context: Context, report: MonthlyProfitLossReport) {
+        val sb = StringBuilder()
+        sb.append("================================\n")
+        sb.append("   LAPORAN LABA RUGI BULANAN\n")
+        sb.append("      ${_storeName.value}\n")
+        sb.append("================================\n")
+        sb.append("Periode     : ${report.displayMonthYear}\n")
+        sb.append("Dicetak     : ${CurrencyFormatter.formatDate(System.currentTimeMillis())}\n")
+        sb.append("--------------------------------\n")
+        sb.append("1. Total Penjualan (Omzet)  : ${CurrencyFormatter.formatRupiah(report.totalRevenue)}\n")
+        sb.append("2. Modal Terjual (HPP)      : ${CurrencyFormatter.formatRupiah(report.totalCostOfGoodsSold)}\n")
+        if (report.totalDiscount > 0) {
+            sb.append("3. Diskon Diberikan         : -${CurrencyFormatter.formatRupiah(report.totalDiscount)}\n")
+        }
+        sb.append("--------------------------------\n")
+        val statusText = if (report.netProfit >= 0) "LABA BERSIH" else "RUGI BERSIH"
+        val prefix = if (report.netProfit >= 0) "+" else ""
+        sb.append("HASIL: $statusText\n")
+        sb.append("Total Laba/Rugi: $prefix${CurrencyFormatter.formatRupiah(report.netProfit)}\n")
+        sb.append("Margin Laba    : ${String.format(java.util.Locale.US, "%.1f", report.profitMarginPercent)}%\n")
+        sb.append("--------------------------------\n")
+        sb.append("Statistik Penjualan:\n")
+        sb.append(" - Transaksi Selesai : ${report.transactionCount} Trx\n")
+        sb.append(" - Rata-rata per Trx : ${CurrencyFormatter.formatRupiah(report.averageTransactionValue)}\n")
+        sb.append("Rincian per Metode Bayar:\n")
+        sb.append(" - Tunai    : ${CurrencyFormatter.formatRupiah(report.cashRevenue)}\n")
+        sb.append(" - QRIS     : ${CurrencyFormatter.formatRupiah(report.qrisRevenue)}\n")
+        sb.append(" - Transfer : ${CurrencyFormatter.formatRupiah(report.transferRevenue)}\n")
+        sb.append(" - Kasbon   : ${CurrencyFormatter.formatRupiah(report.kasbonRevenue)}\n")
+        sb.append("================================\n")
+        sb.append("${_receiptFooter.value}\n")
+
+        val sendIntent = Intent().apply {
+            action = Intent.ACTION_SEND
+            putExtra(Intent.EXTRA_TEXT, sb.toString())
+            type = "text/plain"
+        }
+        val shareIntent = Intent.createChooser(sendIntent, "Bagikan Laporan Laba Rugi")
         context.startActivity(shareIntent)
     }
 }
